@@ -1,0 +1,39 @@
+{
+  "status": "complete",
+  "started_utc": "2026-09-24T11:16:59.225902+00:00",
+  "profile": "standard",
+  "graph_start": 80000,
+  "qubits": 16,
+  "backend": "FakeGuadalupeV2 historical calibration",
+  "backend_calibration_date": "2021-04-20T07:26:31+02:00",
+  "compiler_seeds": [
+    11,
+    29,
+    47
+  ],
+  "cases": [
+    "qaoa_p1",
+    "qaoa_p2"
+  ],
+  "balanced_instances_per_random_family": 12,
+  "workload_instances_per_random_family": 12,
+  "shots": 128,
+  "noise_policy": "first balanced/sparse25, balanced/medium50, workload/cubic and workload/er75 graphs, for both p1 and p2",
+  "beam_seconds": 5.0,
+  "packages": {
+    "qiskit": "2.5.2",
+    "qiskit-aer": "0.17.2",
+    "qiskit-ibm-runtime": "0.47.0",
+    "numpy": "2.5.3"
+  },
+  "fairness": [
+    "Stock and Hybrid receive the exact same logical PauliEvolutionGate QAOA circuit.",
+    "Stock and Hybrid receive the same Qiskit compiler seed.",
+    "Hybrid automatically falls back to stock Qiskit outside its tested QAOA/density window.",
+    "The balanced and workload suites are both started by the same command.",
+    "The workload suite is structure-diverse; it is not claimed to match measured production frequencies."
+  ],
+  "finished_utc": "2026-09-24T11:58:32.796814+00:00",
+  "raw_rows": 1620,
+  "paired_graph_cases": 270
+}
