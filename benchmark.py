@@ -1,13 +1,4 @@
-"""One-command benchmark for stock Qiskit Level 3 vs my Hybrid Level 3.
-
-Every profile runs both suites automatically:
-  1) balanced density/structure coverage,
-  2) a structure-diverse QAOA workload suite.
-
-The standard and stress profiles also run local hardware-calibrated noise simulation
-on a subset. No IBM account is needed. This is still a FakeGuadalupeV2 snapshot,
-not a claim about a current physical IBM QPU.
-"""
+"""Older FakeGuadalupe benchmark; also supplies shared circuit metrics."""
 from __future__ import annotations
 
 import argparse
@@ -430,7 +421,7 @@ def should_simulate_noise(profile_name, suite, family, instance_index, layers):
             or (suite == "workload" and family == "cubic")
         )
     if profile_name == "standard":
-        # Two V4-ish cases and two Qiskit-fallback cases is enough to catch obvious
+        # Two beam-routed cases and two Qiskit-fallback cases is enough to catch obvious
         # noise-path problems without adding hours to the run.
         sampled = {
             ("balanced", "sparse25"),

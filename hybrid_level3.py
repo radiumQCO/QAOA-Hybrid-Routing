@@ -2,7 +2,7 @@
 
 The normal Qiskit Level-3 pipeline is still the fallback. The only extra idea
 here is simple: detect the narrow QAOA/commuting-ZZ case I actually tested,
-try the V4 beam router there, then hand the physical circuit back to Qiskit
+try the Hybrid beam router there, then hand the physical circuit back to Qiskit
 Level 3 for the normal cleanup/translation/scheduling stages.
 
 I intentionally do not monkey-patch Qiskit's installed package. That would make
@@ -32,11 +32,11 @@ DEFAULT_BEAM_SECONDS = 5.0
 
 
 class BeamBudgetExceeded(RuntimeError):
-    """The bounded V4 search used up its time budget."""
+    """The bounded Hybrid search used up its time budget."""
 
 
 class BeamRoutingFailed(RuntimeError):
-    """The V4 search did not find a complete route inside its search space."""
+    """The Hybrid search did not find a complete route inside its search space."""
 
 
 @dataclass(frozen=True)
@@ -80,12 +80,13 @@ class _State:
     steps: int
 
 
-def _build_level3(target, *, initial_layout, seed_transpiler: int):
+def _build_level3(target, *, initial_layout, seed_transpiler: int,
+                  routing_method: str = "sabre"):
     return generate_preset_pass_manager(
         optimization_level=3,
         target=target,
         initial_layout=initial_layout,
-        routing_method="sabre",
+        routing_method=routing_method,
         seed_transpiler=int(seed_transpiler),
         approximation_degree=1.0,
         qubits_initially_zero=False,
@@ -104,9 +105,8 @@ def _final_positions(compiled: QuantumCircuit, logical_qubits: int) -> list[int]
 
 
 def inspect_qaoa_shape(qc: QuantumCircuit) -> QAOAShape:
-    """Recognize the exact QAOA shape V4 was designed and tested for."""
-    # I am deliberately strict here. If the circuit is not the kind I actually tested,
-    # the hybrid should be boring and let normal Qiskit handle it.
+    """Recognize the exact QAOA shape Hybrid was designed and tested for."""
+    # Route only the QAOA circuit shapes covered by the benchmarks.
     pairs = set()
     first_layer_pairs = None
     layers = 0
@@ -289,8 +289,8 @@ def _focus_edges(state: _State, at, edges, distances):
 
 
 def _batches(state: _State, at, edges, distances, max_candidates=24):
-    # Trying every possible SWAP batch explodes way too fast. I keep a small shortlist
-    # of useful-looking single swaps, then build a few non-overlapping pairs/triples.
+    # Trying every SWAP batch grows too fast. Score single SWAPs first, then
+    # combine a short list of non-overlapping moves.
     singles = list(_focus_edges(state, at, edges, distances))[:10]
     batches = [(edge,) for edge in singles]
     for size in (2, 3):
@@ -306,8 +306,7 @@ def _score(state: _State, distances, paths, degree):
     if not pending:
         return (state.swaps, state.steps, 0.0)
 
-    # Count all remaining work first. Doing this inside the scoring loop used to make
-    # the score depend on the order of ZZ pairs, which was a pretty dumb hidden bug.
+    # Count remaining work before scoring so ZZ iteration order cannot change the score.
     remaining = [0] * len(state.where)
     for u, v, _ in pending:
         remaining[u] += 1
@@ -399,18 +398,18 @@ def _route_layer(pending, where, cmap, *, beam_width, deadline):
             key=lambda state: _score(state, distances, paths, degree),
         )[:beam_width]
 
-    raise BeamRoutingFailed("V4 could not route the whole ZZ layer.")
+    raise BeamRoutingFailed("Hybrid could not route the whole ZZ layer.")
 
 
 def _layer_terms(qc, instruction):
     gate = instruction.operation
     if gate.num_qubits != qc.num_qubits or not isinstance(gate.operator, SparsePauliOp):
-        raise ValueError("V4 needs a full-width SparsePauliOp ZZ layer.")
+        raise ValueError("Hybrid needs a full-width SparsePauliOp ZZ layer.")
     terms = {}
     for label, qubits, coefficient in gate.operator.to_sparse_list():
         value = complex(coefficient)
         if label != "ZZ" or len(qubits) != 2 or abs(value.imag) > 1e-10:
-            raise ValueError("V4 only supports real two-qubit ZZ terms.")
+            raise ValueError("Hybrid only supports real two-qubit ZZ terms.")
         u, v = sorted(qc.find_bit(instruction.qubits[i]).index for i in qubits)
         terms[u, v] = terms.get((u, v), 0.0) + 2 * value.real * gate.time
     return terms
@@ -424,7 +423,7 @@ def route_beam_layers(
     beam_width: int = DEFAULT_BEAM_WIDTH,
     max_seconds: float | None = DEFAULT_BEAM_SECONDS,
 ) -> RoutedCircuit:
-    """Route a supported commuting-ZZ QAOA circuit with V4 beam search."""
+    """Route a supported commuting-ZZ QAOA circuit with Hybrid beam search."""
     n = qc.num_qubits
     chip_size = cmap.size()
     if len(initial_layout) != n or len(set(initial_layout)) != n:
@@ -504,8 +503,7 @@ def compile_hybrid_level3(
     shape = inspect_qaoa_shape(qc)
     cmap = backend.coupling_map
     tested_shape = qc.num_qubits == 16 and backend.num_qubits == 16
-    # This selector is intentionally simple for V1. Medium/dense ZZ graphs are where
-    # V4 has evidence behind it; everything else stays on stock Qiskit instead of gambling.
+    # Use this route only on the medium and dense ZZ graphs where it was tested.
     use_beam = (
         tested_shape
         and shape.supported
@@ -518,9 +516,9 @@ def compile_hybrid_level3(
         elif not shape.supported:
             reason = shape.reason
         elif shape.density < MIN_BEAM_DENSITY:
-            reason = f"density {shape.density:.3f} is below the V4 window"
+            reason = f"density {shape.density:.3f} is below the Hybrid window"
         else:
-            reason = f"density {shape.density:.3f} is above the V4 window"
+            reason = f"density {shape.density:.3f} is above the Hybrid window"
         stock = compile_stock_level3(qc, backend, seed_transpiler=int(seed_transpiler))
         return CompileResult(
             circuit=stock.circuit,
@@ -544,15 +542,14 @@ def compile_hybrid_level3(
             max_seconds=beam_seconds,
         )
     except (BeamBudgetExceeded, BeamRoutingFailed, ValueError) as exc:
-        # Failing safely matters more than forcing V4 to finish. A bad search just hands
-        # the original circuit back to normal Level 3 and records why it happened.
+        # If the search fails, use Stock Level 3 and record why.
         route_seconds = perf_counter() - route_start
         stock = compile_stock_level3(qc, backend, seed_transpiler=int(seed_transpiler))
         return CompileResult(
             circuit=stock.circuit,
             final_positions=stock.final_positions,
             route_mode="qiskit_fallback",
-            selector_reason=f"V4 fallback: {type(exc).__name__}",
+            selector_reason=f"Hybrid fallback: {type(exc).__name__}",
             density=shape.density,
             router_seconds=route_seconds,
             level3_seconds=stock.level3_seconds,
@@ -577,7 +574,7 @@ def compile_hybrid_level3(
     return CompileResult(
         circuit=compiled,
         final_positions=final_positions,
-        route_mode="v4_beam",
+        route_mode="v2_beam",
         selector_reason=(
             f"supported QAOA with density {shape.density:.3f} inside "
             f"[{MIN_BEAM_DENSITY:.2f}, {MAX_BEAM_DENSITY:.2f}]"

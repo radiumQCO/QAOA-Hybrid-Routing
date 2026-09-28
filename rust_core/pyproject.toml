@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.15,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "qaoa-v2-rust"
+version = "2.0.0"
+requires-python = ">=3.10"
+description = "Rust routing core for Hybrid QAOA Routing v2.0.0"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "qaoa_v2_rust"

@@ -1,60 +1,43 @@
-# QAOA Hybrid Routing
+# Hybrid QAOA Routing v2.0.0
 
-Experimental QAOA-aware routing combined with Qiskit Level 3.
+I built this router around a simple QAOA trick: the ZZ gates in a cost layer can be reordered. Rust searches for a good qubit order and routes the layer; Qiskit compiles the chosen circuit to the target's native gates.
 
-This is my second attempt at improving QAOA compilation.
+On two independent 64q MaxCut/QAOA runs, Hybrid used 4.7% fewer native 2Q gates than the tested Qiskit commuting-routing pipeline and won all 120 paired cases.
 
-My first idea was much simpler: reorder commuting ZZ interactions before giving the circuit to SABRE. After testing it more carefully, I found that the original benchmark was not representative enough and the method did not consistently beat normal Qiskit Level 3.
+## Try it in Qiskit
 
-So I dropped that approach and started again.
+Install this release from GitHub (tested with Python 3.12; building from source needs Rust):
 
-QAOA Hybrid Routing uses a specialized router for some commuting-ZZ QAOA circuits. Instead of only changing gate order, it searches over SWAP and layout choices directly.
+```bash
+python -m pip install "git+https://github.com/radiumQCO/QAOA-Hybrid-Routing.git@v2.0.0"
+```
 
-The routing is used only for circuit structures where it has tested well. Other circuits fall back to normal Qiskit Level 3.
+Then use the normal Qiskit call:
 
-## Current result
+```python
+from qiskit import transpile
 
-The current standard benchmark uses:
+compiled = transpile(
+    your_qaoa_circuit, backend=your_backend,
+    optimization_level=3, routing_method="qaoa_hybrid", seed_transpiler=11,
+)
+print(compiled.metadata["qaoa_hybrid_route"])
+```
 
-- 16 logical qubits
-- FakeGuadalupeV2
-- QAOA p=1 and p=2
-- 3 Qiskit compiler seeds
-- 270 paired graph/case comparisons
-- the same logical circuit and compiler seed for Stock and Hybrid
+The printout is `hybrid` when this router ran or `sabre_fallback` for other circuits or an unfinished bounded search. The plugin targets 16–64 qubit commuting-ZZ QAOA with interaction density at least 45%. Its target needs gate durations for the candidate comparison. [A complete example](examples/basic.py) uses only Qiskit. Run `python examples/basic.py` from a clone after installing the package. `python plugin_smoke.py` checks the installed plugin, native gates, measured-qubit mapping, and a 16-qubit compiled state. With [research dependencies](requirements.txt) installed, `python plugin_smoke.py --ibm` also reproduces saved FakeBrisbane 16q and 64q cases.
 
-Results:
+## Results so far
 
-| Benchmark | Native 2Q reduction | Duration reduction | 2Q-depth reduction |
-|-----------|--------------------:|-------------------:|-------------------:|
-| Balanced  |               6.03% |              6.91% |              7.49% |
-| Workload  |               5.37% |              7.19% |              7.67% |
+These are **local compilation results** from the research runner, not a separate benchmark of the plugin. The main comparison baseline is a QAOA-specific Qiskit pipeline: `Commuting2qGateRouter` with a time-limited SAT placement. Stock Level 3 is in the reports too.
 
-When the specialized V4 router was activated, it had:
+| Workload | Paired target cases | Completed | Hybrid vs commuting native 2Q | Wins |
+| --- | ---: | ---: | ---: | ---: |
+| 64q, two fresh runs | 120 | 120/120 | **4.7% fewer** | 120/120 |
+| 32q | 120 | 120/120 | **7.2% fewer** | 105/120 |
+| 24q medium50 | 90 | 90/90 | **8.2% fewer** | 69/90 |
 
-**94 wins / 1 tie / 1 loss**
+The 64q runs used 40 different MaxCut/QAOA circuits on FakeBrisbane, FakeKyiv, and FakeSherbrooke. Hybrid had 2.4% less summed 2Q depth and averaged 3.00 s per compile versus 10.88 s for the commuting pipeline. SAT did not prove optimal placement in those runs. [Full report](results/v2_64q_research_report_20260928.md) · [first run](results/v2_64q_fresh_holdout.csv) · [independent run](results/v2_64q_independent_confirmation.csv) · [line-order ablation](results/v2_64q_line_order_ablation_20260928.csv).
 
-in native two-qubit gate count across the tested graph-cases.
+These numbers cover this workload and these three target snapshots. The 20q results were mixed, and 40/48q have only small probes. Checks replayed SWAPs and gates, verified final mapping, and checked native 2Q support. I have not fully simulated the compiled 64q circuits or run this version on a real QPU. [32q report](results/v2_32q_combined_20260928.md) · [24q report](results/v2_medium24_combined_20260928.md) · [size probes](results/v2_40_48_64_smoke_20260928.md).
 
-Depending on the interaction structure, the improvement on those activated cases was usually around 12–22%.
-
-## Important limitation
-
-The current router is slow.
-
-It is mostly written in Python and its search takes much longer than stock Qiskit Level 3.
-
-This is one of the main things I want to improve next. I am interested in moving the hot part of the router to Rust with AI(cuz idk nothing about Rust actually) and making the search itself cheaper.
-
-## Correctness
-
-Every compiled circuit in the benchmark had to pass a statevector equivalence check.
-
-The benchmark uses the historical FakeGuadalupeV2 target. This is a local hardware-aware benchmark, not a result from a physical IBM quantum computer.
-
-## Running the benchmark
-
-Install the dependencies:
-
-```powershell
-pip install -r requirements.txt
+The frozen benchmark code is in [research_32plus.py](research_32plus.py); the router is in [hybrid_level3_v2.py](hybrid_level3_v2.py) and [rust_core/src/lib.rs](rust_core/src/lib.rs). Licensed under [Apache-2.0](LICENSE).
