@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "qaoa-hybrid-routing"
-version = "2.0.0"
+version = "2.0.1"
 description = "QAOA-aware routing for Qiskit, backed by Rust"
 authors = [{name = "Deni Aldamov"}]
 readme = "README.md"
@@ -30,6 +30,7 @@ include = [
   "LICENSE",
   "hybrid_level3.py",
   "hybrid_level3_v2.py",
+  "hybrid_line_next.py",
   "layout_seed.py",
   "rust_router_core.py",
   "routing_metrics.py",

@@ -1,4 +1,4 @@
-"""Qiskit routing-stage adapter for the frozen QAOA Hybrid v2 router."""
+"""Qiskit routing-stage adapter for QAOA Hybrid."""
 
 from __future__ import annotations
 
@@ -174,7 +174,14 @@ class _RouteHybrid(TransformationPass):
             chosen = next(candidate for candidate in candidates
                           if candidate.compiled is variants["tournament"])
         else:
-            _, chosen = compile_hybrid_dense_v2(
+            # The faster line search applies only above 24 logical qubits.
+            if n > 24:
+                from hybrid_line_next import compile_hybrid_line_next
+
+                compiler = compile_hybrid_line_next
+            else:
+                compiler = compile_hybrid_dense_v2
+            _, chosen = compiler(
                 compact, backend, seed_transpiler=self.seed, return_candidate=True,
             )
         routed = chosen.routed

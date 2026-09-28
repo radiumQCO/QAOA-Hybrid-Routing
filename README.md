@@ -1,4 +1,4 @@
-# Hybrid QAOA Routing v2.0.0
+# Hybrid QAOA Routing v2.0.1
 
 I built this router around a simple QAOA trick: the ZZ gates in a cost layer can be reordered. Rust searches for a good qubit order and routes the layer; Qiskit compiles the chosen circuit to the target's native gates.
 
@@ -9,7 +9,7 @@ On two independent 64q MaxCut/QAOA runs, Hybrid used 4.7% fewer native 2Q gates 
 Install this release from GitHub (tested with Python 3.12; building from source needs Rust):
 
 ```bash
-python -m pip install "git+https://github.com/radiumQCO/QAOA-Hybrid-Routing.git@v2.0.0"
+python -m pip install "git+https://github.com/radiumQCO/QAOA-Hybrid-Routing.git@v2.0.1"
 ```
 
 Then use the normal Qiskit call:
@@ -25,6 +25,8 @@ print(compiled.metadata["qaoa_hybrid_route"])
 ```
 
 The printout is `hybrid` when this router ran or `sabre_fallback` for other circuits or an unfinished bounded search. The plugin targets 16–64 qubit commuting-ZZ QAOA with interaction density at least 45%. Its target needs gate durations for the candidate comparison. [A complete example](examples/basic.py) uses only Qiskit. Run `python examples/basic.py` from a clone after installing the package. `python plugin_smoke.py` checks the installed plugin, native gates, measured-qubit mapping, and a 16-qubit compiled state. With [research dependencies](requirements.txt) installed, `python plugin_smoke.py --ibm` also reproduces saved FakeBrisbane 16q and 64q cases.
+
+In v2.0.1, 25–64q circuits compile one selected line instead of fully compiling two line candidates. On 60 fresh 64q target cases, mean compile time fell from 2.87 s to 1.57 s. Native 2Q count improved slightly overall; individual depth can vary. [Paired check](results/v2_line_next_confirm_103600.md).
 
 ## Results so far
 
